@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>PoseNet Project</title>
+  <style>
+    body {
+      margin: 0;
+      font-family: Arial;
+    }
+    #container {
+      display: flex;
+      height: 100vh;
+    }
+    #left {
+      width: 70%;
+      background: #000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+      flex-direction: column;
+    }
+    #right {
+      width: 30%;
+      padding: 30px;
+      background: #f8f8f8;
+      overflow-y: auto;
+    }
+    canvas {
+      border: 4px solid #333;
+    }
+    h2 {
+      margin-top: 0;
+    }
+    .controls {
+      margin-top: 10px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    button {
+      padding: 8px 12px;
+      border: none;
+      background-color: #333;
+      color: white;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+    button:hover {
+      background-color: #555;
+    }
+  </style>
+</head>
+<body>
+
+<div id="container">
+  <div id="left">
+    <div class="controls">
+      <button onclick="setMode('default')">Default</button>
+      <button onclick="setMode('poseChallenge')">🎭 Pose Challenge</button>
+      <button onclick="setMode('measurements')">📏 Body Measurements</button>
+      <button onclick="setMode('heatmap')">🎨 Heatmap</button>
+      <button onclick="setMode('CartoonAvatar')">😊 Cartoon Avatar</button>
+      <button onclick="setMode('Breathing Exercise')">🪁 Breathing Exercise</button>
+    </div>
+  </div>
+  <div id="right">
+    <h2>About This Project</h2>
+    <p>This interactive project uses <strong>PoseNet</strong> (via <strong>ml5.js</strong>) to estimate your body posture in real time from your webcam feed. Built with <strong>p5.js</strong>, it offers several fun and educational features.</p>
+  
+    <h3>🔧 How It Works</h3>
+    <ul>
+      <li><strong>Pose Detection:</strong> Tracks keypoints like eyes, shoulders, hips, etc.</li>
+      <li><strong>Skeleton Drawing:</strong> Connects keypoints to show a live skeleton.</li>
+      <li><strong>Mode Selection:</strong> Switch modes to explore games, measurements, and visual tools.</li>
+    </ul>
+  
+    <h3>🧠 Modes</h3>
+    <ul>
+      <li><strong>Default:</strong> Shows pose, posture check, distance, height, and object measurements.</li>
+      <li><strong>🎭 Pose Challenge:</strong> Try to match silhouette poses with a timer and score.</li>
+      <li><strong>📏 Measurements:</strong> Arm span, torso length, and leg length estimates.</li>
+      <li><strong>🎨 Heatmap:</strong> Confidence visualization for each body part (red-yellow-green).</li>
+      <li><strong>😊 Cartoon Avatar:</strong> Emoji face and stick-figure body drawn from your pose.</li>
+      <li><strong>🪁 Breathing Exercise:</strong> Calming visual guide to inhale/exhale every 4 seconds.</li>
+    </ul>
+  
+    <h3>🧰 Tech Used</h3>
+    <ul>
+      <li><strong>p5.js</strong> – Canvas rendering & interaction</li>
+      <li><strong>ml5.js</strong> – Friendly ML models (built on TensorFlow.js)</li>
+      <li><strong>PoseNet</strong> – Pre-trained pose detection model</li>
+    </ul>
+  
+    <p style="margin-top: 20px; font-size: 0.95em; color: #444;">
+      Made  by <strong>Harsh Gupta</strong> – combining creativity, code, and AI for fun and learning!
+    </p>
+
+    <p style="margin-top: 30px; font-size: 0.9em; color: #555;">
+        📧 Want the code or to collaborate?<br>
+        <a href="mailto:codewithharshg@gmail.com" style="color: #0077cc;">Email Harsh Gupta</a>
+    </p>
+      </p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/p5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.4.0/addons/p5.dom.min.js"></script>
+<script src="https://unpkg.com/ml5@0.12.2/dist/ml5.min.js"></script>
+<script>
+let my_cam;
+let posenet;
+let singlePose, skeleton;
+let mode = 'default';
+let silhouette = null;
+let timer = 30;
+let level = 1;
+let score = 0;
+let interval;
+
+let breathingCircleSize = 50;
+let prevChestY = 0;
+let breathingState = "Inhale";
+
+function setMode(newMode) {
+  mode = newMode;
+  if (mode === 'poseChallenge') {
+    timer = 30;
+    level = 1;
+    score = 0;
+    clearInterval(interval);
+    interval = setInterval(() => {
+      timer--;
+      if (timer <= 0) {
+        timer = 30;
+        level++;
+        generateSilhouette();
+      }
+    }, 1000);
+    generateSilhouette();
+  } else {
+    clearInterval(interval);
+  }
+}
+
+function generateSilhouette() {
+  if (!singlePose) return;
+  silhouette = {};
+  for (let kp of singlePose.keypoints) {
+    silhouette[kp.part] = {
+      x: kp.position.x + random(-50, 50),
+      y: kp.position.y + random(-50, 50)
+    };
+  }
+}
+
+function setup() {
+  let canvas = createCanvas(960, 700);
+  canvas.parent('left');
+  my_cam = createCapture(VIDEO);
+  my_cam.size(width, height);
+  my_cam.hide();
+  posenet = ml5.poseNet(my_cam, () => console.log('Model Loaded'));
+  posenet.on('pose', results => {
+    if (results.length > 0) {
+      singlePose = results[0].pose;
+      skeleton = results[0].skeleton;
+    }
+  });
+}
+
+function draw() {
+  background(255);
+  image(my_cam, 0, 0, width, height);
+
+  if (!singlePose) return;
+
+  if (mode === 'default') {
+    drawKeypoints();
+    drawSkeleton();
+    estimateDistanceToCamera();
+    checkPosture();
+    estimateHeight();
+    measureArmObject();
+  } else if (mode === 'poseChallenge') {
+    drawKeypoints();
+    drawSkeleton();
+    showSilhouette();
+    showTimerAndScore();
+  } else if (mode === 'measurements') {
+    drawKeypoints();
+    drawSkeleton();
+    estimateBodyMeasurements();
+  } else if (mode === 'heatmap') {
+    drawConfidenceHeatmap();
+  } else if (mode === 'CartoonAvatar') {
+    drawCartoonAvatar();
+  } else if (mode === 'Breathing Exercise') {
+    drawBreathingGuide();
+  }
+}
+
+
+function showSilhouette() {
+  if (!silhouette) return;
+  stroke(0, 0, 255);
+  for (let kp in silhouette) {
+    ellipse(silhouette[kp].x, silhouette[kp].y, 10);
+  }
+  // Score match
+  let matchScore = 0;
+  for (let kp of singlePose.keypoints) {
+    if (silhouette[kp.part]) {
+      let d = dist(kp.position.x, kp.position.y, silhouette[kp.part].x, silhouette[kp.part].y);
+      matchScore += max(0, 100 - d);
+    }
+  }
+  score = matchScore / singlePose.keypoints.length;
+  fill(0);
+  textSize(20);
+  text(`Score: ${score.toFixed(1)}%`, 20, 30);
+}
+function drawKeypoints() {
+  fill(255, 0, 0);
+  noStroke();
+  for (let kp of singlePose.keypoints) {
+    if (kp.score > 0.5) ellipse(kp.position.x, kp.position.y, 15);
+  }
+}
+
+function drawSkeleton() {
+  stroke(255, 255, 0);
+  strokeWeight(2);
+  for (let [a, b] of skeleton) {
+    line(a.position.x, a.position.y, b.position.x, b.position.y);
+  }
+}
+
+function showTimerAndScore() {
+  fill(0);
+  textSize(20);
+  text(`Timer: ${timer}s`, 20, 60);
+  text(`Level: ${level}`, 20, 90);
+}
+
+
+function drawCartoonAvatar() {
+  const p = singlePose;
+  textSize(300);
+  textAlign(CENTER, CENTER);
+  text("😊", p.nose.x, p.nose.y);
+  strokeWeight(6);
+  stroke(0);
+  line(p.nose.x, p.nose.y + 30, (p.leftHip.x + p.rightHip.x) / 2, p.leftHip.y);
+  line(p.leftShoulder.x, p.leftShoulder.y, p.leftElbow.x, p.leftElbow.y);
+  line(p.leftElbow.x, p.leftElbow.y, p.leftWrist.x, p.leftWrist.y);
+  line(p.rightShoulder.x, p.rightShoulder.y, p.rightElbow.x, p.rightElbow.y);
+  line(p.rightElbow.x, p.rightElbow.y, p.rightWrist.x, p.rightWrist.y);
+  line(p.leftHip.x, p.leftHip.y, p.leftKnee.x, p.leftKnee.y);
+  line(p.leftKnee.x, p.leftKnee.y, p.leftAnkle.x, p.leftAnkle.y);
+  line(p.rightHip.x, p.rightHip.y, p.rightKnee.x, p.rightKnee.y);
+  line(p.rightKnee.x, p.rightKnee.y, p.rightAnkle.x, p.rightAnkle.y);
+}
+
+// function drawBreathingGuide() {
+//   let leftShoulder = singlePose.leftShoulder;
+//   let rightShoulder = singlePose.rightShoulder;
+//   if (leftShoulder && rightShoulder) {
+//     let chestY = (leftShoulder.y + rightShoulder.y) / 2;
+//     if (chestY < prevChestY - 1) {
+//       breathingState = "Inhale";
+//       breathingCircleSize += 0.5;
+//     } else if (chestY > prevChestY + 1) {
+//       breathingState = "Exhale";
+//       breathingCircleSize -= 0.5;
+//     }
+//     breathingCircleSize = constrain(breathingCircleSize, 30, 100);
+//     noStroke();
+//     fill(breathingState === "Inhale" ? 'lightblue' : 'lightgreen');
+//     ellipse(width - 100, height - 100, breathingCircleSize);
+//     fill(0);
+//     textSize(16);
+//     textAlign(CENTER, CENTER);
+//     text(breathingState, width - 100, height - 150);
+//     prevChestY = chestY;
+//   }
+// }
+
+// Controlled Breathing Animation (with Timer)
+let breathingTimer = 0;
+let breathingPhase = "Inhale";
+let breathingCircleSize1 = 50;
+
+function drawBreathingGuide() {
+  // Timer logic (4 seconds per phase)
+  if (frameCount % 240 === 0) { // ~60 FPS x 4 seconds
+    breathingPhase = (breathingPhase === "Inhale") ? "Exhale" : "Inhale";
+  }
+
+  // Animate circle
+  if (breathingPhase === "Inhale") {
+    breathingCircleSize1 += 0.5;
+  } else {
+    breathingCircleSize1 -= 0.5;
+  }
+  breathingCircleSize1 = constrain(breathingCircleSize1, 30, 120);
+
+  // Draw circle
+  noStroke();
+  fill(breathingPhase === "Inhale" ? 'lightblue' : 'lightgreen');
+  ellipse(width - 100, height - 100, breathingCircleSize1);
+
+  // Show text
+  fill(0);
+  textSize(24);
+  textAlign(CENTER, CENTER);
+  text(breathingPhase, width - 100, height - 150);
+}
+
+
+function estimateDistanceToCamera() {
+  let left = singlePose.leftEye;
+  let right = singlePose.rightEye;
+  let d = dist(left.x, left.y, right.x, right.y);
+  const F = 600, D = 6.3;
+  let cm = (D * F) / d;
+  fill(cm < 30 ? 'red' : cm > 90 ? 'orange' : 'green');
+  textSize(20);
+  text(`Distance: ${cm.toFixed(1)} cm`, 20, 30);
+}
+
+function checkPosture() {
+  let diff = abs(singlePose.leftShoulder.y - singlePose.rightShoulder.y);
+  fill(diff < 30 ? 'green' : 'red');
+  textSize(20);
+  text(diff < 30 ? "Good Posture ✅" : "Slouching ❌", 20, 60);
+}
+
+function estimateHeight() {
+  let h = (Math.max(singlePose.leftAnkle.y, singlePose.rightAnkle.y) - singlePose.nose.y) * 0.26;
+  fill(255, 255, 0);
+  textSize(20);
+  text(`Estimated Height: ${h.toFixed(1)} cm`, 20, 90);
+}
+
+function measureArmObject() {
+  let l = dist(singlePose.leftWrist.x, singlePose.leftWrist.y, singlePose.leftElbow.x, singlePose.leftElbow.y) * 0.26;
+  stroke(0, 255, 255);
+  line(singlePose.leftWrist.x, singlePose.leftWrist.y, singlePose.leftElbow.x, singlePose.leftElbow.y);
+  noStroke();
+  fill(0, 255, 255);
+  textSize(18);
+  text(`Object Height: ${l.toFixed(1)} cm`, singlePose.leftWrist.x + 10, singlePose.leftWrist.y);
+}
+
+function estimateBodyMeasurements() {
+  let arm = dist(singlePose.leftWrist.x, singlePose.leftWrist.y, singlePose.rightWrist.x, singlePose.rightWrist.y) * 0.26;
+  let torso = dist(singlePose.nose.x, singlePose.nose.y, singlePose.leftHip.x, singlePose.leftHip.y) * 0.26;
+  let leg = dist(singlePose.leftHip.x, singlePose.leftHip.y, singlePose.leftAnkle.x, singlePose.leftAnkle.y) * 0.26;
+  fill(0, 0, 255);
+  textSize(20);
+  text(`Arm Span: ${arm.toFixed(1)} cm`, 20, 30);
+  text(`Torso Length: ${torso.toFixed(1)} cm`, 20, 60);
+  text(`Leg Length: ${leg.toFixed(1)} cm`, 20, 90);
+}
+
+function drawConfidenceHeatmap() {
+  for (let kp of singlePose.keypoints) {
+    fill(kp.score > 0.8 ? 'green' : kp.score > 0.5 ? 'yellow' : 'red');
+    ellipse(kp.position.x, kp.position.y, 20);
+  }
+}
+</script>
+</body>
+</html>
